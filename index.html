@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TRADING MODUL</title>
+  <meta name="description" content="Koleksi video modul trading berbasis Google Drive" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="videos.js"></script>
+</head>
+<body>
+
+  <!-- ══ HEADER ══ -->
+  <header class="site-header" id="siteHeader">
+    <div class="header-inner">
+      <a class="site-logo" href="#home">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M21 3H3C1.9 3 1 3.9 1 5v14c0 1.1.9 2 2 2h18c1.1 0
+            2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 13l-7-4 7-4v8z"/>
+        </svg>
+        TRADING MODUL
+      </a>
+      <div class="search-wrap" id="headerSearch" style="display:none">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+        </svg>
+        <input type="text" class="search-input" id="searchInput"
+          placeholder="Cari video atau tag..." autocomplete="off"/>
+      </div>
+      <div class="header-meta" id="headerMeta">—</div>
+    </div>
+  </header>
+
+  <!-- ══ APP CONTENT ══ -->
+  <main class="app-content" id="appContent"></main>
+
+  <!-- ══ BOTTOM NAV ══ -->
+  <nav class="bottom-nav">
+    <a class="nav-item" id="navHome" href="#home">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/>
+          <path d="M9 21V12h6v9"/>
+        </svg>
+      </span>
+      <span class="nav-label">HOME</span>
+    </a>
+    <a class="nav-item" id="navDashboard" href="#dashboard">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+      </span>
+      <span class="nav-label">DASHBOARD</span>
+    </a>
+  </nav>
+
+  <!-- ══ MODAL ══ -->
+  <div class="modal-overlay" id="modalOverlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span class="modal-title" id="modalTitle">—</span>
+        <div class="modal-tags" id="modalTags"></div>
+        <button class="modal-close" id="modalClose" aria-label="Tutup video">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-video-wrap">
+        <iframe id="modalIframe" src=""
+          allow="autoplay; encrypted-media; picture-in-picture"
+          allowfullscreen title="Video Player"></iframe>
+      </div>
+      <div class="modal-footer">
+        <a class="modal-open-btn" id="modalOpenLink" href="#" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+          <span id="modalOpenLabel">BUKA VIDEO</span>
+        </a>
+        <span class="modal-source-badge" id="modalSourceBadge"></span>
+        <span class="modal-hint">Tekan ESC untuk menutup</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (() => {
+    'use strict';
+
+    /* ── State ── */
+    let allVideos    = [];
+    let activeTags   = new Set();
+    let searchQuery  = '';
+    let currentPage  = '';
+    let folderVideos = [];
+
+    /* ── DOM ── */
+    const elApp     = document.getElementById('appContent');
+    const elMeta    = document.getElementById('headerMeta');
+    const elSearch  = document.getElementById('searchInput');
+    const elHSearch = document.getElementById('headerSearch');
+    const elOverlay = document.getElementById('modalOverlay');
+    const elIframe  = document.getElementById('modalIframe');
+    const elMTitle  = document.getElementById('modalTitle');
+    const elMTags   = document.getElementById('modalTags');
+    const elMClose  = document.getElementById('modalClose');
+    const elMLink   = document.getElementById('modalOpenLink');
+    const elMLabel  = document.getElementById('modalOpenLabel');
+    const elMBadge  = document.getElementById('modalSourceBadge');
+    const navHome   = document.getElementById('navHome');
+    const navDash   = document.getElementById('navDashboard');
+
+    /* ════════════════════════════════════
+       URL PARSERS
+       Returns { id, source } — source: 'drive' | 'youtube'
+       Returns null if URL tidak dikenali.
+    ════════════════════════════════════ */
+    function parseLink(url) {
+      if (!url) return null;
+      url = url.trim();
+
+      /* ── YouTube ── */
+      // Mendukung semua format:
+      // https://www.youtube.com/watch?v=ID
+      // https://youtu.be/ID
+      // https://youtube.com/shorts/ID
+      // https://www.youtube.com/embed/ID
+      let m;
+      m = url.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+      if (m) return { id: m[1], source: 'youtube' };
+
+      /* ── Google Drive ── */
+      m = url.match(/\/file\/d\/([a-zA-Z0-9_-]{15,})/);
+      if (m) return { id: m[1], source: 'drive' };
+      m = url.match(/[?&]id=([a-zA-Z0-9_-]{15,})/);
+      if (m) return { id: m[1], source: 'drive' };
+      m = url.match(/\/open\?id=([a-zA-Z0-9_-]{15,})/);
+      if (m) return { id: m[1], source: 'drive' };
+
+      return null;
+    }
+
+    /* ── Thumbnail URL (source-aware) ── */
+    function thumbUrl(video) {
+      if (video.source === 'youtube')
+        return 'https://img.youtube.com/vi/' + video.id + '/hqdefault.jpg';
+      return 'https://drive.google.com/thumbnail?id=' + video.id + '&sz=w480';
+    }
+
+    /* ── Embed URL (source-aware) ── */
+    function embedUrl(video) {
+      if (video.source === 'youtube')
+        return 'https://www.youtube.com/embed/' + video.id + '?autoplay=1&rel=0';
+      return 'https://drive.google.com/file/d/' + video.id + '/preview';
+    }
+
+    /* ── HTML escape ── */
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = String(s ?? '');
+      return d.innerHTML;
+    }
+
+    /* ════════════════════════════════════
+       PROCESS VIDEO_LIST
+       Setiap video: { link, id, source, title, folder, tags }
+    ════════════════════════════════════ */
+    function processVideoList(raw) {
+      if (!Array.isArray(raw)) return [];
+      return raw.map((item, i) => {
+        if (!item || typeof item !== 'object') return null;
+        const link   = String(item.link || '').trim();
+        const parsed = parseLink(link);
+        if (!parsed) return null;
+        const title  = String(item.title  || ('Video ' + (i + 1))).trim();
+        const folder = String(item.folder || '').trim();
+        const tags   = Array.isArray(item.tags)
+          ? item.tags.map(t => String(t).trim().toLowerCase()).filter(Boolean)
+          : [];
+        return { link, id: parsed.id, source: parsed.source, title, folder, tags };
+      }).filter(Boolean);
+    }
+
+    /* ── Build folder map ── */
+    function buildFolderMap() {
+      const map = new Map();
+      allVideos.forEach(v => {
+        if (!v.folder) return;
+        if (!map.has(v.folder)) map.set(v.folder, []);
+        map.get(v.folder).push(v);
+      });
+      return map;
+    }
+
+    /* ── Mosaic HTML (folder thumbnails) ── */
+    function mosaicHtml(videos, extraClass) {
+      const take = videos.slice(0, 4);
+      const cls  = 'folder-mosaic mosaic-' + take.length + (extraClass ? ' ' + extraClass : '');
+      return '<div class="' + cls + '">' +
+        take.map(v =>
+          '<div class="mosaic-cell"><img src="' + thumbUrl(v) + '" alt="' + esc(v.title) + '" loading="lazy"/></div>'
+        ).join('') +
+      '</div>';
+    }
+
+    /* ════════════════════════════════════
+       ROUTER
+    ════════════════════════════════════ */
+    function navigate(hash) {
+      hash = (hash || '#home').replace(/^#/, '');
+      window.scrollTo(0, 0);
+      if (hash.startsWith('folder/')) {
+        renderFolderPage(decodeURIComponent(hash.slice(7)));
+        navHome.classList.add('active'); navDash.classList.remove('active');
+      } else if (hash === 'dashboard') {
+        renderDashboard();
+        navDash.classList.add('active'); navHome.classList.remove('active');
+      } else {
+        renderHome();
+        navHome.classList.add('active'); navDash.classList.remove('active');
+      }
+    }
+    window.addEventListener('hashchange', () => navigate(location.hash));
+
+    /* ════════════════════════════════════
+       HERO SLIDESHOW ENGINE
+    ════════════════════════════════════ */
+    let heroTimer     = null;
+    let heroIndex     = 0;
+    let heroAnimating = false;
+    const HS_VISIBLE  = 5;
+    const HS_GAP      = 12;
+
+    function hsBuildTrack(startIdx) {
+      const n = allVideos.length;
+      let html = '';
+      for (let i = 0; i < HS_VISIBLE + 1; i++) {
+        const v = allVideos[(startIdx + i) % n];
+        html += '<div class="hs-slide"><img src="' + thumbUrl(v) + '" alt="' + esc(v.title) + '" loading="lazy"/></div>';
+      }
+      return html;
+    }
+
+    function initHeroSlideshow() {
+      if (heroTimer) { clearInterval(heroTimer); heroTimer = null; }
+      heroIndex = 0; heroAnimating = false;
+      if (allVideos.length < 2) return;
+      const track = document.getElementById('hsTrack');
+      if (!track) return;
+      track.style.transition = 'none';
+      track.style.transform  = 'translateX(0)';
+      track.innerHTML        = hsBuildTrack(0);
+      heroTimer = setInterval(advanceHeroSlide, 2000);
+    }
+
+    function advanceHeroSlide() {
+      if (heroAnimating) return;
+      const track = document.getElementById('hsTrack');
+      if (!track) { clearInterval(heroTimer); return; }
+      heroAnimating = true;
+      const firstTile = track.firstElementChild;
+      if (!firstTile) { heroAnimating = false; return; }
+      const shiftPx = firstTile.getBoundingClientRect().width + HS_GAP;
+      track.style.transition = 'transform 0.75s cubic-bezier(0.45, 0, 0.2, 1)';
+      track.style.transform  = 'translateX(-' + shiftPx + 'px)';
+      setTimeout(() => {
+        heroIndex = (heroIndex + 1) % allVideos.length;
+        track.style.transition = 'none';
+        track.style.transform  = 'translateX(0)';
+        track.innerHTML        = hsBuildTrack(heroIndex);
+        heroAnimating = false;
+      }, 780);
+    }
+
+    function stopHeroSlideshow() {
+      if (heroTimer) { clearInterval(heroTimer); heroTimer = null; }
+    }
+
+    /* ════════════════════════════════════
+       PAGE: HOME
+    ════════════════════════════════════ */
+    function renderHome() {
+      currentPage = 'home'; searchQuery = '';
+      stopHeroSlideshow();
+      elHSearch.style.display = 'none';
+      const folderMap = buildFolderMap();
+      const folders   = Array.from(folderMap.entries());
+      elMeta.textContent = folders.length + ' FOLDER · ' + allVideos.length + ' VIDEO';
+
+      elApp.innerHTML =
+        '<div class="page-home">' +
+        '<div class="home-hero">' +
+          '<div class="home-hero-inner">' +
+            '<div class="home-eyebrow">SELAMAT DATANG</div>' +
+            '<h1 class="home-title">MODUL <span>TRADING</span></h1>' +
+            '<p class="home-sub">Pilih folder materi di bawah untuk mulai belajar. Setiap folder berisi video step-by-step yang bisa ditonton langsung.</p>' +
+            '<div class="home-stats">' +
+              '<div class="home-stat"><span class="stat-num">' + folders.length + '</span><span class="stat-lbl">FOLDER</span></div>' +
+              '<div class="home-stat-div"></div>' +
+              '<div class="home-stat"><span class="stat-num">' + allVideos.length + '</span><span class="stat-lbl">VIDEO</span></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="hs-wrap"><div class="hs-gradient"></div><div class="hs-track" id="hsTrack"></div></div>' +
+        '</div>' +
+        '<div class="home-section">' +
+          '<div class="home-section-header">' +
+            '<h2 class="home-section-title">SEMUA <span>FOLDER</span></h2>' +
+            '<span class="home-section-count">' + folders.length + ' FOLDER</span>' +
+          '</div>' +
+          '<div class="folder-grid">' +
+            folders.map(([name, vids], i) => {
+              const delay = Math.min(i * 65, 520);
+              return '<div class="folder-card" data-folder="' + esc(name) + '" role="button" tabindex="0" aria-label="Buka: ' + esc(name) + '" style="animation-delay:' + delay + 'ms">' +
+                '<div class="folder-card-thumb">' + mosaicHtml(vids) +
+                  '<div class="folder-card-overlay"><div class="folder-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div></div>' +
+                '</div>' +
+                '<div class="folder-card-info">' +
+                  '<div class="folder-card-name">' + esc(name) + '</div>' +
+                  '<div class="folder-card-count">' + vids.length + ' VIDEO</div>' +
+                '</div>' +
+              '</div>';
+            }).join('') +
+          '</div>' +
+        '</div>' +
+        '</div>';
+
+      elApp.querySelectorAll('.folder-card').forEach(card => {
+        const open = () => { location.hash = '#folder/' + encodeURIComponent(card.dataset.folder); };
+        card.addEventListener('click', open);
+        card.addEventListener('keydown', e => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); open(); }});
+      });
+      requestAnimationFrame(initHeroSlideshow);
+    }
+
+    /* ════════════════════════════════════
+       PAGE: FOLDER DETAIL
+    ════════════════════════════════════ */
+    function renderFolderPage(folderName) {
+      currentPage = 'folder'; searchQuery = '';
+      stopHeroSlideshow(); activeTags.clear(); elSearch.value = '';
+      const folderMap = buildFolderMap();
+      const videos    = folderMap.get(folderName);
+      if (!videos) { location.hash = '#home'; return; }
+      folderVideos = videos;
+      elHSearch.style.display = '';
+      elMeta.textContent = esc(folderName);
+
+      elApp.innerHTML =
+        '<div class="page-folder">' +
+        '<div class="folder-back-bar"><a class="back-btn" href="#home">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>' +
+          'SEMUA FOLDER</a></div>' +
+        '<div class="folder-hero">' +
+          mosaicHtml(videos, 'hero-mosaic') +
+          '<div class="folder-hero-overlay">' +
+            '<div class="folder-hero-eyebrow">FOLDER MATERI</div>' +
+            '<h1 class="folder-hero-title">' + esc(folderName) + '</h1>' +
+            '<span class="folder-hero-badge">' + videos.length + ' VIDEO</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="folder-video-header">' +
+          '<span class="folder-video-title">DAFTAR VIDEO</span>' +
+          '<span class="video-count" id="videoCount">' + videos.length + ' VIDEO</span>' +
+        '</div>' +
+        '<div class="video-grid" id="videoGrid">' + buildVideoCards(videos) + '</div>' +
+        '</div>';
+
+      attachCardEvents();
+    }
+
+    /* ════════════════════════════════════
+       PAGE: DASHBOARD
+    ════════════════════════════════════ */
+    function renderDashboard() {
+      currentPage = 'dashboard'; searchQuery = '';
+      stopHeroSlideshow(); activeTags.clear(); elSearch.value = '';
+      const tagCount = new Set(allVideos.flatMap(v => v.tags)).size;
+      elHSearch.style.display = '';
+      elMeta.textContent = allVideos.length + ' VIDEO · ' + tagCount + ' TAG';
+
+      elApp.innerHTML =
+        '<div class="main-wrap page-dashboard">' +
+          '<div class="section-header">' +
+            '<h1 class="section-title">MODUL <span>VIDEO</span></h1>' +
+            '<div class="video-count" id="videoCount">' + allVideos.length + ' VIDEO</div>' +
+          '</div>' +
+          '<div class="filter-bar" id="filterBar"><span class="filter-label">FILTER :</span></div>' +
+          '<div class="filter-active-bar" id="filterActiveBar" style="display:none">' +
+            '<span class="filter-active-label" id="filterActiveLabel"></span>' +
+            '<button class="filter-reset-btn" id="filterResetBtn">' +
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11"><path d="M18 6L6 18M6 6l12 12"/></svg>' +
+              'RESET FILTER</button>' +
+          '</div>' +
+          '<div class="video-grid" id="videoGrid">' + buildVideoCards(allVideos) + '</div>' +
+        '</div>';
+
+      buildFilterBar();
+      attachCardEvents();
+      document.getElementById('filterResetBtn').addEventListener('click', () => {
+        activeTags.clear(); syncTagButtons(); applyDashFilter();
+      });
+    }
+
+    /* ── Filter bar ── */
+    function buildFilterBar() {
+      const el = document.getElementById('filterBar');
+      if (!el) return;
+      const tagSet = new Set();
+      allVideos.forEach(v => v.tags.forEach(t => tagSet.add(t)));
+      el.innerHTML = '<span class="filter-label">FILTER :</span>';
+      const mkBtn = (value, label, active) => {
+        const btn = document.createElement('button');
+        btn.className = 'tag-btn' + (active ? ' active' : '');
+        btn.dataset.tag = value;
+        btn.innerHTML = '<span class="tag-dot"></span>' + esc(label);
+        return btn;
+      };
+      const allBtn = mkBtn('__all__', 'Semua', true);
+      allBtn.addEventListener('click', () => { activeTags.clear(); syncTagButtons(); applyDashFilter(); });
+      el.appendChild(allBtn);
+      Array.from(tagSet).sort().forEach(tag => {
+        const btn = mkBtn(tag, tag, false);
+        btn.addEventListener('click', () => {
+          activeTags.has(tag) ? activeTags.delete(tag) : activeTags.add(tag);
+          syncTagButtons(); applyDashFilter();
+        });
+        el.appendChild(btn);
+      });
+    }
+
+    function syncTagButtons() {
+      document.querySelectorAll('.tag-btn').forEach(btn => {
+        const v = btn.dataset.tag;
+        btn.classList.toggle('active', v === '__all__' ? activeTags.size === 0 : activeTags.has(v));
+      });
+      const bar = document.getElementById('filterActiveBar');
+      const lbl = document.getElementById('filterActiveLabel');
+      if (!bar) return;
+      if (!activeTags.size) { bar.style.display = 'none'; return; }
+      bar.style.display = 'flex';
+      lbl.innerHTML = '<span class="active-tag-count">' + activeTags.size + ' FILTER AKTIF :</span> ' +
+        Array.from(activeTags).map(t => '<span class="active-tag-chip">' + esc(t) + '</span>').join('');
+    }
+
+    function applyDashFilter() {
+      let res = allVideos;
+      if (activeTags.size) res = res.filter(v => Array.from(activeTags).every(t => v.tags.includes(t)));
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        res = res.filter(v => v.title.toLowerCase().includes(q) || v.tags.some(t => t.includes(q)));
+      }
+      const vc = document.getElementById('videoCount');
+      const grid = document.getElementById('videoGrid');
+      if (vc)   vc.textContent = res.length + ' VIDEO';
+      if (grid) { grid.innerHTML = buildVideoCards(res); attachCardEvents(); }
+    }
+
+    /* ── Search ── */
+    let searchTimer;
+    elSearch.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        searchQuery = elSearch.value.trim();
+        if (currentPage === 'dashboard') applyDashFilter();
+        else if (currentPage === 'folder') applyFolderSearch();
+      }, 200);
+    });
+
+    function applyFolderSearch() {
+      let res = folderVideos;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        res = res.filter(v => v.title.toLowerCase().includes(q) || v.tags.some(t => t.includes(q)));
+      }
+      const vc = document.getElementById('videoCount');
+      const grid = document.getElementById('videoGrid');
+      if (vc)   vc.textContent = res.length + ' VIDEO';
+      if (grid) { grid.innerHTML = buildVideoCards(res); attachCardEvents(); }
+    }
+
+    /* ════════════════════════════════════
+       VIDEO CARDS BUILDER
+       data-id  = video.id
+       data-src = video.source ('drive' | 'youtube')
+    ════════════════════════════════════ */
+    function buildVideoCards(list) {
+      if (!list.length) return '<div class="empty-state">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>' +
+        '<h3>TIDAK DITEMUKAN</h3><p>Tidak ada video yang cocok.</p></div>';
+
+      return list.map((v, i) => {
+        const delay    = Math.min(i * 55, 420);
+        const tagsHtml = v.tags.length
+          ? v.tags.map(t => '<span class="card-tag' + (activeTags.has(t) ? ' highlight' : '') + '">' + esc(t) + '</span>').join('')
+          : '<span class="card-tag" style="opacity:.35">—</span>';
+        const sk = 'sk_' + v.source + '_' + v.id + '_' + i;
+
+        /* Source badge: YT (merah) atau GD (biru) */
+        const srcBadge = v.source === 'youtube'
+          ? '<span class="card-src-badge yt"><svg viewBox="0 0 24 24" fill="currentColor" width="9" height="9"><path d="M23.5 6.2a3 3 0 00-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 00.5 6.2 31 31 0 000 12a31 31 0 00.5 5.8 3 3 0 002.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 002.1-2.1A31 31 0 0024 12a31 31 0 00-.5-5.8zM9.7 15.5V8.5l6.3 3.5-6.3 3.5z"/></svg>YT</span>'
+          : '<span class="card-src-badge gd"><svg viewBox="0 0 24 24" fill="currentColor" width="9" height="9"><path d="M4.5 21L1 15l5.5-9.5h5L4.5 21zm3-3.5H20l-3.5-6H8L7.5 17.5zM8.5 5.5L12 0l3.5 6h-7z"/></svg>GD</span>';
+
+        return '<div class="video-card"' +
+            ' data-id="' + esc(v.id) + '"' +
+            ' data-src="' + esc(v.source) + '"' +
+            ' role="button" tabindex="0" aria-label="Putar: ' + esc(v.title) + '"' +
+            ' style="animation-delay:' + delay + 'ms">' +
+          '<div class="card-thumb">' +
+            '<div class="thumb-skeleton" id="' + sk + '"></div>' +
+            '<img src="' + thumbUrl(v) + '" alt="' + esc(v.title) + '" loading="lazy"' +
+              ' onload="(function(){var e=document.getElementById(\'' + sk + '\');if(e)e.style.display=\'none\';})()"' +
+              ' onerror="(function(){this.style.opacity=\'0.12\';var e=document.getElementById(\'' + sk + '\');if(e)e.style.animation=\'none\';})()"' +
+            '/>' +
+            srcBadge +
+            '<div class="play-overlay"><div class="play-btn-circle"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>' +
+          '</div>' +
+          '<div class="card-info">' +
+            '<div class="card-title">' + esc(v.title) + '</div>' +
+            '<div class="card-tags">' + tagsHtml + '</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    /* ── Attach card events ── */
+    function attachCardEvents() {
+      elApp.querySelectorAll('.video-card').forEach(card => {
+        const open = () => {
+          const video = allVideos.find(v => v.id === card.dataset.id && v.source === card.dataset.src);
+          if (!video) return;
+          /* YouTube → langsung buka di tab baru, Drive → modal embed */
+          if (video.source === 'youtube') {
+            window.open(video.link, '_blank', 'noopener,noreferrer');
+          } else {
+            openModal(video);
+          }
+        };
+        card.addEventListener('click', open);
+        card.addEventListener('keydown', e => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); open(); }});
+      });
+    }
+
+    /* ════════════════════════════════════
+       MODAL
+    ════════════════════════════════════ */
+    function openModal(video) {
+      elMTitle.textContent = video.title;
+      elIframe.src         = embedUrl(video);
+      elMLink.href         = video.link;
+      elMTags.innerHTML    = video.tags.map(t => '<span class="modal-tag">' + esc(t) + '</span>').join('');
+
+      /* Label & badge berubah sesuai source */
+      if (video.source === 'youtube') {
+        elMLabel.textContent = 'BUKA DI YOUTUBE';
+        elMBadge.textContent = 'YOUTUBE';
+        elMBadge.className   = 'modal-source-badge yt';
+      } else {
+        elMLabel.textContent = 'BUKA DI GOOGLE DRIVE';
+        elMBadge.textContent = 'GOOGLE DRIVE';
+        elMBadge.className   = 'modal-source-badge gd';
+      }
+
+      elOverlay.classList.add('open');
+      document.body.style.overflow = 'hidden';
+      elMClose.focus();
+    }
+
+    function closeModal() {
+      elOverlay.classList.remove('open');
+      document.body.style.overflow = '';
+      setTimeout(() => { elIframe.src = ''; }, 280);
+    }
+
+    elMClose.addEventListener('click', closeModal);
+    elOverlay.addEventListener('click', e => { if (e.target === elOverlay) closeModal(); });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && elOverlay.classList.contains('open')) closeModal();
+    });
+
+    /* ════════════════════════════════════
+       INIT
+    ════════════════════════════════════ */
+    function init() {
+      if (typeof VIDEO_LIST === 'undefined' || !Array.isArray(VIDEO_LIST)) {
+        elApp.innerHTML = '<div class="main-wrap"><div class="video-grid"><div class="error-banner">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+          '<div><strong>File videos.js tidak ditemukan.</strong><br>Pastikan <code>videos.js</code> ada di folder yang sama.</div>' +
+          '</div></div></div>';
+        elMeta.textContent = 'ERROR';
+        return;
+      }
+      allVideos = processVideoList(VIDEO_LIST);
+      if (!allVideos.length) {
+        elApp.innerHTML = '<div class="main-wrap"><div class="video-grid"><div class="error-banner">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+          '<div><strong>Tidak ada video valid ditemukan.</strong><br>Periksa URL Google Drive atau YouTube di videos.js.</div>' +
+          '</div></div></div>';
+        elMeta.textContent = '0 VIDEO';
+        return;
+      }
+      navigate(location.hash || '#home');
+    }
+
+    if (document.readyState === 'loading')
+      document.addEventListener('DOMContentLoaded', init);
+    else
+      init();
+
+  })();
+  </script>
+</body>
+</html>
